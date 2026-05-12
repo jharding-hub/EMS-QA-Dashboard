@@ -4,20 +4,56 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Fishers DFE&S — EMS QA/QI Dashboard</title>
-  <!-- React + ReactDOM -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <!-- Recharts -->
-  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
-  <!-- Babel standalone (JSX transform) -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    html, body { margin: 0; padding: 0; background: #090c12; color: #dde4f2; min-height: 100vh; font-family: system-ui, sans-serif; }
+    #boot { padding: 40px; text-align: center; opacity: .6; font-size: 14px; }
+    #err  { padding: 24px; background: #1a0a0a; border-left: 4px solid #ff4757; margin: 20px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; color: #ffb4b4; line-height: 1.5; }
+  </style>
+
+  <!-- Visible error handler — never blank page again -->
+  <script>
+    window.addEventListener('error', function (e) {
+      var root = document.getElementById('root') || document.body;
+      var box = document.createElement('div');
+      box.id = 'err';
+      box.textContent = '⚠️ Runtime error\n\n' + (e.message || '') + '\n' + (e.filename || '') + ':' + (e.lineno || '') + ':' + (e.colno || '') + '\n\n' + ((e.error && e.error.stack) || '');
+      root.innerHTML = '';
+      root.appendChild(box);
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var root = document.getElementById('root') || document.body;
+      var box = document.createElement('div');
+      box.id = 'err';
+      box.textContent = '⚠️ Promise rejection\n\n' + (e.reason && (e.reason.stack || e.reason.message || e.reason));
+      root.appendChild(box);
+    });
+  </script>
+
+  <!-- ESM module resolution via importmap (more reliable than UMD globals) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "react":            "https://esm.sh/react@18.3.1",
+      "react/":           "https://esm.sh/react@18.3.1/",
+      "react-dom":        "https://esm.sh/react-dom@18.3.1?deps=react@18.3.1",
+      "react-dom/":       "https://esm.sh/react-dom@18.3.1&deps=react@18.3.1/",
+      "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1",
+      "recharts":         "https://esm.sh/recharts@2.12.7?deps=react@18.3.1,react-dom@18.3.1"
+    }
+  }
+  </script>
+
+  <!-- Babel standalone — transpiles JSX, supports data-type="module" -->
+  <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
 </head>
 <body>
-  <div id="root"></div>
-  <script type="text/babel">
-// ── CDN globals ────────────────────────────────────────────────────
-const { useState, useEffect, useRef } = React;
-const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend } = Recharts;
+  <div id="root"><div id="boot">Loading dashboard…</div></div>
+
+  <script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useEffect, useRef } from 'react';
+import { createRoot } from 'react-dom/client';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
+
 
 // ═══════════════════════════════════════════════════════════════════
 // GLOBAL STYLES — injected via useEffect
@@ -801,8 +837,7 @@ function Dashboard() {
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<Dashboard />);
+createRoot(document.getElementById('root')).render(<Dashboard />);
   </script>
 </body>
 </html>
