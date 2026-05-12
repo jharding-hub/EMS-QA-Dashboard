@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fishers DFE&S — EMS QA/QI Dashboard</title>
+  <!-- React + ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Recharts -->
+  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+  <!-- Babel standalone (JSX transform) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+
+// ═══════════════════════════════════════════════════════════════════
+// GLOBAL STYLES — injected via useEffect
+// ═══════════════════════════════════════════════════════════════════
+const GLOBAL_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          #090c12;
+    --surface:     #111520;
+    --surface2:    #171c2b;
+    --surface3:    #1d2235;
+    --border:      #242b3e;
+    --border2:     #2c3550;
+    --text:        #dde4f2;
+    --text2:       #8891aa;
+    --text3:       #535c7a;
+    --red:         #ff4757;
+    --red-bg:      rgba(255,71,87,.1);
+    --red-brd:     rgba(255,71,87,.28);
+    --amber:       #ffb700;
+    --amber-bg:    rgba(255,183,0,.09);
+    --amber-brd:   rgba(255,183,0,.28);
+    --green:       #1fda73;
+    --green-bg:    rgba(31,218,115,.09);
+    --green-brd:   rgba(31,218,115,.28);
+    --blue:        #3d8ef8;
+    --blue-bg:     rgba(61,142,248,.1);
+    --blue-brd:    rgba(61,142,248,.28);
+    --font: 'Exo 2', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+
+  html, body, #root { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .qa-btn { font-family: var(--font); border: none; cursor: pointer; transition: filter .15s, transform .1s; }
+  .qa-btn:hover  { filter: brightness(1.18); }
+  .qa-btn:active { transform: scale(.97); }
+
+  .inc-row { transition: background .1s; cursor: pointer; }
+  .inc-row:hover { background: var(--surface3) !important; }
+
+  .tile { transition: border-color .15s, transform .15s, box-shadow .15s; cursor: pointer; }
+  .tile:hover { border-color: var(--blue) !important; transform: translateY(-2px); box-shadow: 0 6px 24px rgba(61,142,248,.14); }
+
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 100; display: flex; align-items: flex-start; justify-content: center; padding: 28px 16px; overflow-y: auto; backdrop-filter: blur(4px); }
+  .modal-box { background: var(--surface); border: 1px solid var(--border2); border-radius: 12px; width: 100%; max-width: 900px; max-height: 88vh; display: flex; flex-direction: column; }
+
+  .fade-in { animation: fadeIn .18s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+  .blink { animation: blink 2s ease-in-out infinite; }
+  @keyframes blink { 0%,100% { opacity:1; } 50% { opacity: .35; } }
+
+  textarea { font-family: var(--mono); font-size: 12px; line-height: 1.65; }
+  textarea:focus { outline: 1px solid var(--blue); }
+`;
+
+// ═══════════════════════════════════════════════════════════════════
+// MOCK DATA  —  Replace with ESO API / Firebase Firestore integration
+//   Fields mirror ESO PCR export: incident #, date, time, complaint,
+//   unit, shift, providers, status, flags, tags, disposition, age
+// ═══════════════════════════════════════════════════════════════════
+const INC = [
+  { id:1,  num:"2026-90001101", date:"2026-05-11", time:"03:12", complaint:"Cardiac Arrest",                    unit:"M71",   shift:"B", providers:["HARDING, JOE","SMITH, AARON"],        status:"red",    flags:["CPR quality metrics not documented","Post-ROSC 12-lead absent","TOR criteria not assessed"],                       tags:["cardiac_arrest"],  disp:"IU Health North – Resuscitated",         age:67, cat:"Medical", mih:false },
+  { id:2,  num:"2026-90001102", date:"2026-05-11", time:"09:45", complaint:"Difficult Airway / DAAM",           unit:"E73",   shift:"B", providers:["JOHNSON, MIKE","DAVIS, SARA"],         status:"red",    flags:["Supraglottic airway – waveform capnography absent per MC Protocol","DAAM activation form incomplete","Medication route unspecified"], tags:["daam","doc_error"], disp:"St. Vincent Hospital",                    age:54, cat:"Medical", mih:false },
+  { id:3,  num:"2026-90001103", date:"2026-05-11", time:"14:22", complaint:"Chest Pain",                        unit:"M72",   shift:"B", providers:["WILSON, CHRIS","MOORE, RACHEL"],       status:"yellow", flags:["Only one set of vitals documented","12-lead interpretation absent from narrative"],                                  tags:["doc_error"],       disp:"IU Health North",                        age:62, cat:"Medical", mih:false },
+  { id:4,  num:"2026-90001104", date:"2026-05-11", time:"16:08", complaint:"Lift Assist – Senior Living",       unit:"E74",   shift:"B", providers:["TAYLOR, DEREK","ANDERSON, LISA"],      status:"green",  flags:[],                                                                                                                     tags:["lift_senior"],     disp:"No Transport – Returned to Bed",         age:82, cat:"Medical", mih:false },
+  { id:5,  num:"2026-90001105", date:"2026-05-11", time:"18:55", complaint:"Diabetic Emergency / Hypoglycemia", unit:"M71",   shift:"B", providers:["HARDING, JOE","THOMAS, PAUL"],         status:"green",  flags:[],                                                                                                                     tags:[],                  disp:"IU Health Saxony",                       age:71, cat:"Medical", mih:false },
+  { id:6,  num:"2026-90000980", date:"2026-05-10", time:"01:34", complaint:"GSW / Penetrating Trauma",          unit:"M73",   shift:"A", providers:["JACKSON, KIM","WHITE, BRAD"],          status:"red",    flags:["Tourniquet application time not documented","Hemorrhage control steps absent","Spinal motion restriction rationale missing"], tags:["trauma"],          disp:"IU Methodist – Trauma Level I",          age:29, cat:"Trauma",  mih:false },
+  { id:7,  num:"2026-90000981", date:"2026-05-10", time:"10:18", complaint:"Stroke / CVA Suspected",            unit:"E72",   shift:"A", providers:["HARRIS, AMY","MARTIN, DREW"],          status:"yellow", flags:["Last Known Well time not documented","Cincinnati Stroke Scale incomplete","Hospital pre-notification lacks specifics"], tags:["doc_error"],       disp:"St. Vincent – Stroke Center",            age:78, cat:"Medical", mih:false },
+  { id:8,  num:"2026-90000982", date:"2026-05-10", time:"15:42", complaint:"Fall – Ground Level",               unit:"E71",   shift:"A", providers:["THOMPSON, KATE","GARCIA, CARLOS"],     status:"green",  flags:[],                                                                                                                     tags:[],                  disp:"IU Health North",                        age:44, cat:"Trauma",  mih:false },
+  { id:9,  num:"2026-90000870", date:"2026-05-09", time:"11:03", complaint:"Anaphylaxis / Allergic Reaction",   unit:"M72",   shift:"C", providers:["MARTINEZ, ELENA","ROBINSON, SETH"],    status:"red",    flags:["Epinephrine administration delay not justified in narrative","Second Epi criteria absent","IV access attempt not documented"], tags:[],                  disp:"Community North Hospital",               age:23, cat:"Medical", mih:false },
+  { id:10, num:"2026-90000871", date:"2026-05-09", time:"20:15", complaint:"Respiratory Distress",              unit:"L71",   shift:"C", providers:["CLARK, JESSICA","RODRIGUEZ, MIKE"],    status:"yellow", flags:["Narrative under 3 sentences – insufficient detail","SpO2 trend not documented"],                                       tags:["doc_error"],       disp:"IU Health North",                        age:68, cat:"Medical", mih:false },
+  { id:11, num:"2026-90000872", date:"2026-05-09", time:"23:47", complaint:"Opioid Overdose / Naloxone Admin",  unit:"M73",   shift:"C", providers:["LEWIS, TARA","HARDING, JOE"],          status:"green",  flags:[],                                                                                                                     tags:[],                  disp:"Community North Hospital",               age:31, cat:"Medical", mih:false },
+  { id:12, num:"2026-90000760", date:"2026-05-08", time:"08:22", complaint:"MCI – MVA (4 Patients)",            unit:"M71",   shift:"B", providers:["SMITH, AARON","JOHNSON, MIKE"],        status:"red",    flags:["START triage not documented for all 4 patients","ICS roles absent per MCI SOG","Triage tag numbers not recorded"],    tags:["multi_patient"],   disp:"Multiple Hospitals",                     age:0,  cat:"Trauma",  mih:false },
+  { id:13, num:"2026-90000761", date:"2026-05-08", time:"13:55", complaint:"Psychiatric Emergency",             unit:"E73",   shift:"B", providers:["DAVIS, SARA","WILSON, CHRIS"],         status:"yellow", flags:["Narrative lacks specific behavior observations","Safety/threat assessment absent"],                                   tags:["doc_error"],       disp:"Eskenazi Health",                        age:35, cat:"Medical", mih:false },
+  { id:14, num:"2026-90000762", date:"2026-05-08", time:"19:30", complaint:"Chest Pain – Atypical",             unit:"M72",   shift:"B", providers:["MOORE, RACHEL","TAYLOR, DEREK"],       status:"green",  flags:[],                                                                                                                     tags:[],                  disp:"IU Health North",                        age:55, cat:"Medical", mih:false },
+  { id:15, num:"2026-90000640", date:"2026-05-07", time:"02:11", complaint:"Cardiac Arrest – PEA",              unit:"M73",   shift:"A", providers:["ANDERSON, LISA","THOMAS, PAUL"],       status:"red",    flags:["Rhythm interpretation absent","Time to first shock not recorded","Code team handoff documentation missing"],           tags:["cardiac_arrest"],  disp:"IU Health North – Deceased on Scene",    age:81, cat:"Medical", mih:false },
+  { id:16, num:"2026-90000641", date:"2026-05-07", time:"11:44", complaint:"Pediatric Febrile Seizure",         unit:"E74",   shift:"A", providers:["JACKSON, KIM","WHITE, BRAD"],          status:"yellow", flags:["Weight documented in pounds not kg","Pedi medication dosing calculation absent from narrative"],                      tags:["doc_error"],       disp:"Riley Hospital for Children",            age:3,  cat:"Medical", mih:false },
+  { id:17, num:"2026-90000642", date:"2026-05-07", time:"16:02", complaint:"Lift Assist – Senior Living",       unit:"E76",   shift:"A", providers:["HARRIS, AMY","MARTIN, DREW"],          status:"green",  flags:[],                                                                                                                     tags:["lift_senior"],     disp:"No Transport – Returned to Bed",         age:88, cat:"Medical", mih:false },
+  { id:18, num:"2026-90000530", date:"2026-05-06", time:"06:48", complaint:"STEMI / Acute MI",                  unit:"M71",   shift:"C", providers:["THOMPSON, KATE","GARCIA, CARLOS"],     status:"red",    flags:["Cath lab activation documentation incomplete","Aspirin administration not confirmed per ACS Protocol","12-lead transmission not documented"], tags:[],                  disp:"IU Health North – Cath Lab Activation",  age:64, cat:"Medical", mih:false },
+  { id:19, num:"2026-90000531", date:"2026-05-06", time:"14:17", complaint:"Abdominal Pain",                    unit:"L72",   shift:"C", providers:["MARTINEZ, ELENA","ROBINSON, SETH"],    status:"yellow", flags:["Medication history incomplete","Pain scale reassessment after intervention absent"],                                  tags:["doc_error"],       disp:"IU Health North",                        age:47, cat:"Medical", mih:false },
+  { id:20, num:"2026-90000532", date:"2026-05-06", time:"22:31", complaint:"Hypertensive Emergency",            unit:"M72",   shift:"C", providers:["CLARK, JESSICA","RODRIGUEZ, MIKE"],    status:"green",  flags:[],                                                                                                                     tags:[],                  disp:"Community North Hospital",               age:59, cat:"Medical", mih:false },
+  { id:21, num:"2026-90000420", date:"2026-05-05", time:"09:00", complaint:"Syncope / LOC",                     unit:"E71",   shift:"B", providers:["LEWIS, TARA","SMITH, AARON"],          status:"yellow", flags:["Orthostatic vital signs not documented","Cardiac monitor interpretation absent from narrative"],                      tags:["doc_error"],       disp:"IU Health North",                        age:66, cat:"Medical", mih:false },
+  { id:22, num:"2026-90000421", date:"2026-05-05", time:"17:33", complaint:"Fall – Minor Trauma",               unit:"M73",   shift:"B", providers:["JOHNSON, MIKE","DAVIS, SARA"],         status:"green",  flags:[],                                                                                                                     tags:["trauma"],          disp:"IU Health Saxony",                       age:36, cat:"Trauma",  mih:false },
+  { id:23, num:"2026-90000310", date:"2026-05-04", time:"04:55", complaint:"MVA – Ejection",                    unit:"M72",   shift:"A", providers:["WILSON, CHRIS","MOORE, RACHEL"],       status:"red",    flags:["Spinal motion restriction rationale not documented","Mechanism of injury incomplete","GCS not trended on scene"],      tags:["trauma"],          disp:"IU Methodist – Trauma Level I",          age:22, cat:"Trauma",  mih:false },
+  { id:24, num:"2026-90000311", date:"2026-05-04", time:"13:08", complaint:"COPD Exacerbation",                 unit:"E73",   shift:"A", providers:["TAYLOR, DEREK","ANDERSON, LISA"],      status:"yellow", flags:["Albuterol dose not charted in medication section","Treatment response assessment after intervention absent"],         tags:["doc_error"],       disp:"IU Health North",                        age:73, cat:"Medical", mih:false },
+  { id:25, num:"2026-90000312", date:"2026-05-04", time:"10:20", complaint:"MIH Follow-Up / Wellness Check",    unit:"Staff", shift:"A", providers:["HARDING, JOE"],                        status:"green",  flags:[],                                                                                                                     tags:["mih"],             disp:"No Transport – MIH Plan Updated",        age:76, cat:"Medical", mih:true  },
+  { id:26, num:"2026-90000200", date:"2026-05-03", time:"08:14", complaint:"Knee Pain / Non-Emergent",          unit:"E77",   shift:"C", providers:["THOMAS, PAUL","JACKSON, KIM"],         status:"green",  flags:[],                                                                                                                     tags:[],                  disp:"IU Health North",                        age:52, cat:"Medical", mih:false },
+  { id:27, num:"2026-90000100", date:"2026-05-02", time:"15:45", complaint:"Lift Assist – Senior Living",       unit:"E75",   shift:"B", providers:["WHITE, BRAD","HARRIS, AMY"],           status:"green",  flags:[],                                                                                                                     tags:["lift_senior"],     disp:"No Transport – Patient Refused",         age:91, cat:"Medical", mih:false },
+  { id:28, num:"2026-90000050", date:"2026-05-01", time:"20:12", complaint:"Cardiac Arrest – ROSC",             unit:"M73",   shift:"C", providers:["MARTIN, DREW","THOMPSON, KATE"],       status:"red",    flags:["Post-ROSC 12-lead absent per Adult Post Cardiac Arrest Care Protocol","TTM protocol not addressed","ROSC time undocumented"], tags:["cardiac_arrest"],  disp:"IU Health North – ICU Admission",        age:56, cat:"Medical", mih:false },
+  { id:29, num:"2026-90000020", date:"2026-04-30", time:"11:33", complaint:"Chest Pain – Rule Out ACS",         unit:"M71",   shift:"A", providers:["GARCIA, CARLOS","MARTINEZ, ELENA"],    status:"yellow", flags:["Second 12-lead not documented","Aspirin administration not confirmed in narrative"],                                  tags:["doc_error"],       disp:"IU Health North",                        age:61, cat:"Medical", mih:false },
+  { id:30, num:"2026-90000010", date:"2026-04-29", time:"14:02", complaint:"Hypoglycemia – Diabetic",           unit:"M72",   shift:"B", providers:["ROBINSON, SETH","CLARK, JESSICA"],     status:"green",  flags:[],                                                                                                                     tags:[],                  disp:"Refused Transport – Improved on Scene",  age:69, cat:"Medical", mih:false },
+];
+
+// ═══════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════
+function filterByPeriod(inc, period) {
+  if (period === "yesterday") return inc.filter(i => i.date === "2026-05-11");
+  const cutoff = period === "week" ? "2026-05-05" : "2026-04-12";
+  return inc.filter(i => i.date >= cutoff && i.date <= "2026-05-11");
+}
+const SC  = s => ({ red:"#ff4757", yellow:"#ffb700", green:"#1fda73" }[s]);
+const SBG = s => ({ red:"var(--red-bg)", yellow:"var(--amber-bg)", green:"var(--green-bg)" }[s]);
+const SBD = s => ({ red:"var(--red-brd)", yellow:"var(--amber-brd)", green:"var(--green-brd)" }[s]);
+const cnt = arr => ({ total:arr.length, red:arr.filter(i=>i.status==="red").length, yellow:arr.filter(i=>i.status==="yellow").length, green:arr.filter(i=>i.status==="green").length });
+
+const PERIOD_LABEL = { yesterday:"Yesterday (May 11, 2026)", week:"Last 7 Days (May 5–11)", month:"Last 30 Days (Apr 12 – May 11)" };
+
+const AI_SYSTEM = `You are an EMS Quality Assurance specialist reviewing a patient care report (PCR) for Fishers Department of Fire and Emergency Services against the Indianapolis Metropolitan Area EMS Protocols 2026 (Marion County EMS Protocols, Version 25.11.1).
+
+Respond with ONLY valid JSON — no markdown fences, no preamble:
+{
+  "status": "RED" | "YELLOW" | "GREEN",
+  "summary": "1–2 sentence overall QA assessment",
+  "flags": ["specific issue with protocol reference where applicable"],
+  "protocolScore": 1-10,
+  "narrativeScore": 1-10,
+  "recommendations": ["specific, actionable improvement"]
+}
+
+STATUS CRITERIA:
+RED — Serious protocol violations or patient safety concerns:
+  • Advanced airway (ETT/King/i-gel) without waveform capnography (Verification of ETT and Supraglottic Airway Device Placement protocol)
+  • Cardiac arrest: CPR quality metrics absent, TOR criteria not assessed, post-ROSC care undocumented (Adult Cardiac Arrest General Care, Post Cardiac Arrest Care protocols)
+  • STEMI: cath lab activation undocumented, aspirin absent per ACS protocol, 12-lead transmission missing (STEMI Special Care protocol)
+  • Stroke: Last Known Well absent, Cincinnati/BEFAST incomplete (Stroke CVA protocol)
+  • Major trauma: tourniquet time missing, hemorrhage control steps absent, spinal motion restriction rationale absent (Initial Trauma Care, Spinal Clearing protocols)
+  • MCI: START triage undocumented, ICS roles absent (MCI SOG)
+  • Medication administered without route, dose, or response documented
+
+YELLOW — Documentation/quality issues:
+  • Poor narrative quality (< 3 descriptive sentences, vague, generic)
+  • Incomplete SAMPLE/OPQRST history
+  • Only one set of vitals documented on non-transport or extended scene
+  • Pain reassessment absent after intervention
+  • Pediatric weight in pounds instead of kg
+  • Orthostatic vitals absent for syncope/near-syncope
+
+GREEN — Compliant report:
+  • Protocol adherence documented, good narrative, vitals trended, interventions and responses charted
+
+Be specific about protocol section names when flagging issues.`;
+
+// ═══════════════════════════════════════════════════════════════════
+// COMPONENTS
+// ═══════════════════════════════════════════════════════════════════
+
+function Badge({ status, size = "sm" }) {
+  const isLg = size === "lg";
+  return (
+    <span style={{ display:"inline-block", fontFamily:"var(--mono)", fontWeight:600, letterSpacing:"0.07em", borderRadius:4, background:SBG(status), color:SC(status), border:`1px solid ${SBD(status)}`, fontSize:isLg?12:10, padding:isLg?"4px 12px":"2px 7px", whiteSpace:"nowrap" }}>
+      {status.toUpperCase()}
+    </span>
+  );
+}
+
+function IncidentTable({ incidents, onSelect }) {
+  if (!incidents.length) return (
+    <div style={{ padding:40, textAlign:"center", color:"var(--text3)", fontFamily:"var(--mono)", fontSize:13 }}>No incidents in this period</div>
+  );
+  return (
+    <div style={{ overflowX:"auto" }}>
+      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+        <thead>
+          <tr style={{ background:"var(--surface2)", fontSize:10, textTransform:"uppercase", letterSpacing:"0.08em", color:"var(--text2)" }}>
+            {["Status","Incident #","Date · Time","Chief Complaint","Unit","Sh","Issues"].map(h => (
+              <th key={h} style={{ padding:"9px 12px", textAlign:"left", fontWeight:700, borderBottom:"1px solid var(--border2)", whiteSpace:"nowrap" }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {incidents.map(i => (
+            <tr key={i.id} className="inc-row fade-in" onClick={() => onSelect(i)} style={{ borderBottom:"1px solid var(--border)", background:"transparent" }}>
+              <td style={{ padding:"9px 12px" }}><Badge status={i.status} /></td>
+              <td style={{ padding:"9px 12px", fontFamily:"var(--mono)", fontSize:11, color:"var(--blue)", whiteSpace:"nowrap" }}>{i.num}</td>
+              <td style={{ padding:"9px 12px", fontFamily:"var(--mono)", fontSize:11, whiteSpace:"nowrap" }}>{i.date.slice(5)} {i.time}</td>
+              <td style={{ padding:"9px 12px" }}>{i.complaint}</td>
+              <td style={{ padding:"9px 12px", fontFamily:"var(--mono)", fontSize:11 }}>{i.unit}</td>
+              <td style={{ padding:"9px 12px", textAlign:"center" }}>
+                <span style={{ fontFamily:"var(--mono)", fontSize:11, background:"var(--surface3)", padding:"2px 6px", borderRadius:3 }}>{i.shift}</span>
+              </td>
+              <td style={{ padding:"9px 12px" }}>
+                {i.flags.length
+                  ? <span style={{ background:SBG(i.status), color:SC(i.status), border:`1px solid ${SBD(i.status)}`, borderRadius:4, padding:"1px 8px", fontSize:11, fontFamily:"var(--mono)" }}>{i.flags.length} flag{i.flags.length>1?"s":""}</span>
+                  : <span style={{ color:"var(--green)", fontSize:11, fontFamily:"var(--mono)" }}>✓ None</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function IncidentDetail({ incident: i, onBack, showBack = true }) {
+  return (
+    <div className="fade-in" style={{ padding:24 }}>
+      {showBack && (
+        <button className="qa-btn" onClick={onBack} style={{ marginBottom:20, background:"var(--surface2)", color:"var(--text2)", padding:"6px 14px", borderRadius:6, fontSize:13, border:"1px solid var(--border2)", fontWeight:600 }}>
+          ← Back to list
+        </button>
+      )}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:16 }}>
+        {[
+          ["Incident #", i.num, true],
+          ["Date / Time", `${i.date}  ${i.time}`, true],
+          ["Chief Complaint", i.complaint, false],
+          ["Unit", i.unit, true],
+          ["Shift", i.shift, true],
+          ["Age", i.age > 0 ? `${i.age} yrs` : "Multi-patient", false],
+          ["Category", i.cat, false],
+          ["Disposition", i.disp, false],
+        ].map(([label, val, mono]) => (
+          <div key={label} style={{ background:"var(--surface2)", borderRadius:8, padding:"12px 14px", border:"1px solid var(--border)" }}>
+            <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:"var(--text3)", marginBottom:5, fontWeight:700 }}>{label}</div>
+            <div style={{ fontSize:13, color:"var(--text)", fontFamily:mono?"var(--mono)":"inherit", wordBreak:"break-word" }}>{val}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ background:"var(--surface2)", borderRadius:8, padding:"12px 14px", border:"1px solid var(--border)", marginBottom:12 }}>
+        <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:"var(--text3)", marginBottom:8, fontWeight:700 }}>Crew</div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+          {i.providers.map(p => (
+            <span key={p} style={{ background:"var(--blue-bg)", color:"var(--blue)", border:"1px solid var(--blue-brd)", borderRadius:4, padding:"3px 10px", fontSize:12, fontFamily:"var(--mono)" }}>{p}</span>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ background:"var(--surface2)", borderRadius:8, padding:"14px 16px", border:`1px solid ${SBD(i.status)}` }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+          <Badge status={i.status} size="lg" />
+          <span style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.12em", color:"var(--text3)", fontWeight:700 }}>QA Assessment</span>
+        </div>
+        {i.flags.length === 0
+          ? <div style={{ color:"var(--green)", fontSize:14 }}>✓ No QA issues identified — report meets documentation standards.</div>
+          : <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {i.flags.map((f, idx) => (
+                <div key={idx} style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+                  <span style={{ color:SC(i.status), flexShrink:0, fontSize:15, lineHeight:1.3 }}>▸</span>
+                  <span style={{ fontSize:13, color:"var(--text)", lineHeight:1.5 }}>{f}</span>
+                </div>
+              ))}
+            </div>}
+      </div>
+    </div>
+  );
+}
+
+// View types: 'list' | 'shift' | 'provider' | 'unit'
+function IncidentModal({ title, subtitle, incidents, view = "list", initialIncident = null, onClose }) {
+  const [selected, setSelected] = useState(initialIncident);
+
+  let body;
+  if (selected) {
+    body = <IncidentDetail incident={selected} onBack={() => setSelected(null)} />;
+  } else if (view === "shift") {
+    body = <ShiftBreakdown incidents={incidents} onSelect={setSelected} />;
+  } else if (view === "provider") {
+    body = <ProviderTable incidents={incidents} />;
+  } else if (view === "unit") {
+    body = <UnitTable incidents={incidents} />;
+  } else {
+    body = <IncidentTable incidents={incidents} onSelect={setSelected} />;
+  }
+
+  return (
+    <div className="modal-bg" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-box fade-in">
+        <div style={{ padding:"18px 22px", borderBottom:"1px solid var(--border2)", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
+          <div>
+            <div style={{ fontWeight:800, fontSize:16, letterSpacing:"0.03em" }}>{title}</div>
+            {subtitle && <div style={{ fontSize:12, color:"var(--text2)", marginTop:2 }}>{subtitle}</div>}
+          </div>
+          <button className="qa-btn" onClick={onClose} style={{ background:"var(--surface2)", color:"var(--text2)", width:32, height:32, borderRadius:6, fontSize:16, border:"1px solid var(--border2)", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+        </div>
+        <div style={{ overflowY:"auto", flexGrow:1 }}>{body}</div>
+      </div>
+    </div>
+  );
+}
+
+function ShiftBreakdown({ incidents, onSelect }) {
+  const data = ["A","B","C"].map(sh => {
+    const s = incidents.filter(i => i.shift === sh);
+    return { shift:`Shift ${sh}`, Critical:s.filter(i=>i.status==="red").length, Review:s.filter(i=>i.status==="yellow").length, Compliant:s.filter(i=>i.status==="green").length, total:s.length };
+  });
+  return (
+    <div style={{ padding:24 }}>
+      <div style={{ marginBottom:20 }}>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={data} barCategoryGap="40%">
+            <XAxis dataKey="shift" stroke="#535c7a" tick={{ fill:"#8891aa", fontSize:13, fontFamily:"Exo 2, sans-serif" }} />
+            <YAxis stroke="#535c7a" tick={{ fill:"#8891aa", fontSize:12 }} />
+            <Tooltip contentStyle={{ background:"#171c2b", border:"1px solid #2c3550", borderRadius:8, color:"#dde4f2", fontFamily:"Exo 2, sans-serif" }} />
+            <Bar dataKey="Critical" stackId="a" fill="#ff4757" />
+            <Bar dataKey="Review"   stackId="a" fill="#ffb700" />
+            <Bar dataKey="Compliant" stackId="a" fill="#1fda73" radius={[4,4,0,0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:24 }}>
+        {data.map(d => (
+          <div key={d.shift} style={{ background:"var(--surface2)", borderRadius:8, padding:"14px", border:"1px solid var(--border)", textAlign:"center" }}>
+            <div style={{ fontSize:11, fontWeight:700, color:"var(--text2)", letterSpacing:"0.08em", marginBottom:6 }}>{d.shift.toUpperCase()}</div>
+            <div style={{ fontFamily:"var(--mono)", fontSize:30, fontWeight:700, color:"var(--text)", lineHeight:1 }}>{d.total}</div>
+            <div style={{ fontSize:10, color:"var(--text3)", marginTop:4, marginBottom:8 }}>total runs</div>
+            <div style={{ display:"flex", justifyContent:"center", gap:6 }}>
+              {d.Critical>0 && <span style={{ color:"#ff4757", fontSize:11, fontFamily:"var(--mono)" }}>{d.Critical}R</span>}
+              {d.Review>0   && <span style={{ color:"#ffb700", fontSize:11, fontFamily:"var(--mono)" }}>{d.Review}Y</span>}
+              {d.Compliant>0 && <span style={{ color:"#1fda73", fontSize:11, fontFamily:"var(--mono)" }}>{d.Compliant}G</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ borderTop:"1px solid var(--border)", paddingTop:16 }}>
+        <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.12em", color:"var(--text3)", fontWeight:700, marginBottom:10, padding:"0 4px" }}>All Incidents in Period</div>
+        <IncidentTable incidents={incidents} onSelect={onSelect} />
+      </div>
+    </div>
+  );
+}
+
+function ProviderTable({ incidents }) {
+  const map = {};
+  incidents.forEach(i => {
+    i.providers.forEach(p => {
+      if (!map[p]) map[p] = { name:p, total:0, red:0, yellow:0, green:0 };
+      map[p].total++; map[p][i.status]++;
+    });
+  });
+  const rows = Object.values(map).sort((a,b) => b.red-a.red || b.total-a.total);
+  return (
+    <div style={{ padding:20 }}>
+      <div style={{ overflowX:"auto" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+          <thead>
+            <tr style={{ background:"var(--surface2)", fontSize:10, textTransform:"uppercase", letterSpacing:"0.08em", color:"var(--text2)" }}>
+              {["Provider","Total","Critical","Review","Compliant","Compliance %"].map(h => (
+                <th key={h} style={{ padding:"9px 12px", textAlign:h==="Provider"?"left":"center", fontWeight:700, borderBottom:"1px solid var(--border2)" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => {
+              const pct = r.total>0 ? Math.round((r.green/r.total)*100) : 0;
+              return (
+                <tr key={r.name} style={{ borderBottom:"1px solid var(--border)" }}>
+                  <td style={{ padding:"9px 12px", fontFamily:"var(--mono)", fontSize:12 }}>{r.name}</td>
+                  <td style={{ padding:"9px 12px", textAlign:"center", fontFamily:"var(--mono)" }}>{r.total}</td>
+                  <td style={{ padding:"9px 12px", textAlign:"center", fontFamily:"var(--mono)", color:r.red?"#ff4757":"var(--text3)", fontWeight:r.red?700:400 }}>{r.red}</td>
+                  <td style={{ padding:"9px 12px", textAlign:"center", fontFamily:"var(--mono)", color:r.yellow?"#ffb700":"var(--text3)" }}>{r.yellow}</td>
+                  <td style={{ padding:"9px 12px", textAlign:"center", fontFamily:"var(--mono)", color:r.green?"#1fda73":"var(--text3)" }}>{r.green}</td>
+                  <td style={{ padding:"9px 12px", textAlign:"center" }}>
+                    <span style={{ fontFamily:"var(--mono)", fontWeight:700, color:pct>=80?"#1fda73":pct>=60?"#ffb700":"#ff4757" }}>{pct}%</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ marginTop:14, padding:"10px 12px", background:"var(--surface2)", borderRadius:6, border:"1px solid var(--border)", fontSize:11, color:"var(--text3)" }}>
+        Showing providers with documented runs in this period. Connect to ESO API / Firestore to display all 160 personnel including those with zero runs.
+      </div>
+    </div>
+  );
+}
+
+function UnitTable({ incidents }) {
+  const map = {};
+  incidents.forEach(i => {
+    if (!map[i.unit]) map[i.unit] = { unit:i.unit, total:0, red:0, yellow:0, green:0 };
+    map[i.unit].total++; map[i.unit][i.status]++;
+  });
+  const type = u => u.startsWith("M")?"Ambulance":u.startsWith("E")?"Engine":u.startsWith("L")?"Ladder":u==="EDO"?"EDO":"Staff";
+  const rows = Object.values(map).sort((a,b) => b.total-a.total);
+  return (
+    <div style={{ padding:20 }}>
+      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+        <thead>
+          <tr style={{ background:"var(--surface2)", fontSize:10, textTransform:"uppercase", letterSpacing:"0.08em", color:"var(--text2)" }}>
+            {["Unit","Type","Runs","Critical","Review","Compliant","Compliance %"].map(h => (
+              <th key={h} style={{ padding:"9px 12px", textAlign:h==="Unit"||h==="Type"?"left":"center", fontWeight:700, borderBottom:"1px solid var(--border2)" }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => {
+            const pct = r.total>0?Math.round((r.green/r.total)*100):0;
+            return (
+              <tr key={r.unit} style={{ borderBottom:"1px solid var(--border)" }}>
+                <td style={{ padding:"9px 12px", fontFamily:"var(--mono)", fontWeight:600, color:"var(--blue)" }}>{r.unit}</td>
+                <td style={{ padding:"9px 12px", fontSize:12, color:"var(--text2)" }}>{type(r.unit)}</td>
+                <td style={{ padding:"9px 12px", textAlign:"center", fontFamily:"var(--mono)" }}>{r.total}</td>
+                <td style={{ padding:"9px 12px", textAlign:"center", fontFamily:"var(--mono)", color:r.red?"#ff4757":"var(--text3)", fontWeight:r.red?700:400 }}>{r.red}</td>
+                <td style={{ padding:"9px 12px", textAlign:"center", fontFamily:"var(--mono)", color:r.yellow?"#ffb700":"var(--text3)" }}>{r.yellow}</td>
+                <td style={{ padding:"9px 12px", textAlign:"center", fontFamily:"var(--mono)", color:r.green?"#1fda73":"var(--text3)" }}>{r.green}</td>
+                <td style={{ padding:"9px 12px", textAlign:"center" }}>
+                  <span style={{ fontFamily:"var(--mono)", fontWeight:700, color:pct>=80?"#1fda73":pct>=60?"#ffb700":"#ff4757" }}>{pct}%</span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AIEvalPanel({ onClose }) {
+  const [input, setInput]   = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult]   = useState(null);
+  const [error, setError]     = useState("");
+
+  async function evaluate() {
+    if (!input.trim()) return;
+    setLoading(true); setError(""); setResult(null);
+    try {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:1000,
+          system: AI_SYSTEM,
+          messages:[{ role:"user", content:`Evaluate this PCR:\n\n${input}` }]
+        })
+      });
+      const data = await resp.json();
+      const text = (data.content||[]).map(c=>c.text||"").join("");
+      const clean = text.replace(/```json|```/g,"").trim();
+      setResult(JSON.parse(clean));
+    } catch(e) {
+      setError("Evaluation failed. Verify API connectivity and try again.");
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <div className="modal-bg" onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div className="modal-box fade-in" style={{ maxWidth:680 }}>
+        <div style={{ padding:"18px 22px", borderBottom:"1px solid var(--border2)", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
+          <div>
+            <div style={{ fontWeight:800, fontSize:16, letterSpacing:"0.03em" }}>◈ AI PCR Evaluator</div>
+            <div style={{ fontSize:12, color:"var(--text2)", marginTop:2 }}>Marion County EMS Protocols 2026 · Fishers DFE&S</div>
+          </div>
+          <button className="qa-btn" onClick={onClose} style={{ background:"var(--surface2)", color:"var(--text2)", width:32, height:32, borderRadius:6, fontSize:16, border:"1px solid var(--border2)", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+        </div>
+        <div style={{ overflowY:"auto", flexGrow:1, padding:22 }}>
+          <label style={{ display:"block", fontSize:11, textTransform:"uppercase", letterSpacing:"0.1em", color:"var(--text2)", marginBottom:8, fontWeight:700 }}>Paste PCR Narrative / Report Data</label>
+          <textarea
+            value={input}
+            onChange={e=>setInput(e.target.value)}
+            placeholder={"Paste the PCR narrative, chief complaint, vitals, interventions performed, medications administered, and any relevant documentation...\n\nExample: 64yo male, CP 8/10 radiating to jaw, diaphoretic. 12-lead showed STEMI inferior. Aspirin 324mg PO given. IV established 18ga R AC. NTG 0.4mg SL x1 — BP 100/72 post-NTG, held further doses. Transported L&S IU North, cath team notified by radio..."}
+            style={{ width:"100%", background:"var(--surface2)", border:"1px solid var(--border2)", borderRadius:8, padding:"12px 14px", color:"var(--text)", minHeight:160, fontSize:12 }}
+          />
+          <button className="qa-btn" onClick={evaluate} disabled={loading||!input.trim()} style={{ marginTop:12, background:loading||!input.trim()?"var(--surface3)":"var(--blue)", color:loading||!input.trim()?"var(--text3)":"#fff", padding:"11px 24px", borderRadius:8, fontSize:14, fontWeight:800, letterSpacing:"0.06em", width:"100%", border:"none" }}>
+            {loading ? "⟳  Evaluating against protocols..." : "▶  Run QA Evaluation"}
+          </button>
+          {error && <div style={{ marginTop:12, padding:"10px 14px", background:"var(--red-bg)", border:"1px solid var(--red-brd)", borderRadius:6, color:"#ff4757", fontSize:13 }}>{error}</div>}
+          {result && (
+            <div className="fade-in" style={{ marginTop:20 }}>
+              <div style={{ display:"flex", alignItems:"flex-start", gap:12, marginBottom:14, padding:"14px 16px", background:SBG(result.status.toLowerCase()), border:`1px solid ${SBD(result.status.toLowerCase())}`, borderRadius:8 }}>
+                <Badge status={result.status.toLowerCase()} size="lg" />
+                <p style={{ fontSize:13, color:"var(--text)", lineHeight:1.6, margin:0 }}>{result.summary}</p>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
+                {[["Protocol Compliance", result.protocolScore],["Narrative Quality", result.narrativeScore]].map(([lbl, score]) => (
+                  <div key={lbl} style={{ background:"var(--surface2)", borderRadius:8, padding:"14px", border:"1px solid var(--border)", textAlign:"center" }}>
+                    <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:"var(--text3)", marginBottom:6, fontWeight:700 }}>{lbl}</div>
+                    <div style={{ fontFamily:"var(--mono)", fontSize:30, fontWeight:700, color:score>=8?"#1fda73":score>=6?"#ffb700":"#ff4757", lineHeight:1 }}>{score}<span style={{ fontSize:14, color:"var(--text3)" }}>/10</span></div>
+                  </div>
+                ))}
+              </div>
+              {result.flags?.length>0 && (
+                <div style={{ background:"var(--surface2)", borderRadius:8, padding:"14px 16px", border:"1px solid var(--red-brd)", marginBottom:12 }}>
+                  <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:"#ff4757", marginBottom:10, fontWeight:700 }}>Issues Identified</div>
+                  {result.flags.map((f,i) => (
+                    <div key={i} style={{ display:"flex", gap:8, marginBottom:7 }}>
+                      <span style={{ color:"#ff4757", flexShrink:0 }}>▸</span>
+                      <span style={{ fontSize:13, color:"var(--text)", lineHeight:1.5 }}>{f}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {result.recommendations?.length>0 && (
+                <div style={{ background:"var(--surface2)", borderRadius:8, padding:"14px 16px", border:"1px solid var(--green-brd)" }}>
+                  <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:"#1fda73", marginBottom:10, fontWeight:700 }}>Recommendations</div>
+                  {result.recommendations.map((r,i) => (
+                    <div key={i} style={{ display:"flex", gap:8, marginBottom:7 }}>
+                      <span style={{ color:"#1fda73", flexShrink:0 }}>▸</span>
+                      <span style={{ fontSize:13, color:"var(--text)", lineHeight:1.5 }}>{r}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusColumn({ status, incidents, onOpenList, onOpenItem }) {
+  const labels = { red:"CRITICAL / PROTOCOL DEVIATION", yellow:"NEEDS REVIEW / DOCUMENTATION", green:"COMPLIANT" };
+  const descs  = { red:"Serious violations · high-risk interventions · patient safety", yellow:"Poor narrative · documentation errors · minor issues", green:"Protocol-compliant · complete documentation" };
+  return (
+    <div style={{ background:"var(--surface)", border:`1px solid var(--border)`, borderRadius:10, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+      <div style={{ background:SBG(status), borderBottom:`1px solid ${SBD(status)}`, padding:"14px 18px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+          <div style={{ flex:1, marginRight:12 }}>
+            <div style={{ fontSize:11, textTransform:"uppercase", letterSpacing:"0.1em", color:SC(status), fontWeight:800, marginBottom:4 }}>{labels[status]}</div>
+            <div style={{ fontSize:10, color:"var(--text2)", lineHeight:1.4 }}>{descs[status]}</div>
+          </div>
+          <div style={{ fontFamily:"var(--mono)", fontSize:40, fontWeight:900, color:SC(status), lineHeight:1, flexShrink:0 }}>{incidents.length}</div>
+        </div>
+      </div>
+      <div style={{ flexGrow:1, overflowY:"auto", maxHeight:300 }}>
+        {incidents.length === 0
+          ? <div style={{ padding:24, textAlign:"center", color:"var(--text3)", fontSize:13 }}>No incidents</div>
+          : incidents.map(inc => (
+              <div key={inc.id} className="inc-row" onClick={() => onOpenItem(inc)} style={{ padding:"11px 16px", borderBottom:"1px solid var(--border)", background:"transparent" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:3 }}>
+                  <span style={{ fontFamily:"var(--mono)", fontSize:10, color:"var(--blue)" }}>{inc.num}</span>
+                  <span style={{ fontFamily:"var(--mono)", fontSize:10, color:"var(--text3)", whiteSpace:"nowrap" }}>{inc.time} · {inc.unit}</span>
+                </div>
+                <div style={{ fontSize:13, color:"var(--text)", marginBottom:inc.flags.length?5:0 }}>{inc.complaint}</div>
+                {inc.flags.length > 0 && (
+                  <div style={{ fontSize:11, color:SC(status), opacity:.8, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                    {inc.flags[0]}{inc.flags.length>1?` +${inc.flags.length-1} more`:""}
+                  </div>
+                )}
+              </div>
+            ))}
+      </div>
+      <button className="qa-btn" onClick={onOpenList} style={{ padding:11, background:"var(--surface2)", color:SC(status), fontSize:12, fontWeight:800, letterSpacing:"0.06em", textTransform:"uppercase", textAlign:"center", borderTop:"1px solid var(--border)", borderRadius:0, width:"100%", border:"none", borderTop:`1px solid var(--border)` }}>
+        View All {incidents.length} {status.toUpperCase()} →
+      </button>
+    </div>
+  );
+}
+
+function ProgramTile({ label, emoji, c, color, onClick }) {
+  const col = { red:"#ff4757", amber:"#ffb700", green:"#1fda73", blue:"var(--blue)" }[color];
+  return (
+    <div className="tile" onClick={onClick} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, padding:"16px 18px" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
+        <span style={{ fontSize:24 }}>{emoji}</span>
+        <span style={{ fontFamily:"var(--mono)", fontSize:32, fontWeight:900, color:col, lineHeight:1 }}>{c.total}</span>
+      </div>
+      <div style={{ fontSize:13, fontWeight:700, color:"var(--text)", marginBottom:8, lineHeight:1.3 }}>{label}</div>
+      <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+        {c.red>0    && <span style={{ fontSize:10, background:"var(--red-bg)",   color:"#ff4757", border:"1px solid var(--red-brd)",   borderRadius:3, padding:"1px 6px", fontFamily:"var(--mono)" }}>{c.red}R</span>}
+        {c.yellow>0 && <span style={{ fontSize:10, background:"var(--amber-bg)", color:"#ffb700", border:"1px solid var(--amber-brd)", borderRadius:3, padding:"1px 6px", fontFamily:"var(--mono)" }}>{c.yellow}Y</span>}
+        {c.green>0  && <span style={{ fontSize:10, background:"var(--green-bg)", color:"#1fda73", border:"1px solid var(--green-brd)", borderRadius:3, padding:"1px 6px", fontFamily:"var(--mono)" }}>{c.green}G</span>}
+        {c.total === 0 && <span style={{ fontSize:10, color:"var(--text3)", fontFamily:"var(--mono)" }}>No incidents</span>}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MAIN DASHBOARD
+// ═══════════════════════════════════════════════════════════════════
+export default function Dashboard() {
+  const [period, setPeriod] = useState("yesterday");
+  const [modal,  setModal]  = useState(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [clock,  setClock]  = useState("");
+
+  useEffect(() => {
+    const el = document.createElement("style");
+    el.textContent = GLOBAL_CSS;
+    document.head.appendChild(el);
+    return () => document.head.removeChild(el);
+  }, []);
+
+  useEffect(() => {
+    const tick = () => setClock(new Date().toLocaleTimeString("en-US",{ hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false }));
+    tick(); const id = setInterval(tick, 1000); return () => clearInterval(id);
+  }, []);
+
+  const filtered  = filterByPeriod(INC, period);
+  const redInc    = filtered.filter(i => i.status==="red");
+  const yellowInc = filtered.filter(i => i.status==="yellow");
+  const greenInc  = filtered.filter(i => i.status==="green");
+
+  const openList = (title, sub, incs, view="list") => setModal({ title, sub, incs, view, init:null });
+  const openItem = (title, sub, incs, inc)         => setModal({ title, sub, incs, view:"list", init:inc });
+
+  // Status board openers
+  const statusTitle = { red:"Critical / Protocol Violations", yellow:"Needs Review", green:"Compliant Reports" };
+
+  // Program datasets
+  const programs = [
+    { label:"Cardiac Arrest",         emoji:"🫀", color:"red",   incs: filtered.filter(i=>i.tags.includes("cardiac_arrest")) },
+    { label:"DAAM / Difficult Airway", emoji:"🫁", color:"red",   incs: filtered.filter(i=>i.tags.includes("daam")) },
+    { label:"Traumatic Incidents",     emoji:"🚨", color:"amber", incs: filtered.filter(i=>i.cat==="Trauma"||i.tags.includes("trauma")) },
+    { label:"Documentation Errors",   emoji:"📋", color:"amber", incs: filtered.filter(i=>i.flags.length>0) },
+    { label:"Lift Assists – Senior",   emoji:"🏠", color:"blue",  incs: filtered.filter(i=>i.tags.includes("lift_senior")) },
+    { label:"Multi-Patient / MCI",     emoji:"🚑", color:"red",   incs: filtered.filter(i=>i.tags.includes("multi_patient")) },
+    { label:"MIH Form Completed",      emoji:"✅", color:"green", incs: filtered.filter(i=>i.mih) },
+  ];
+
+  // Unique providers and units in period
+  const providerSet = new Set(); filtered.forEach(i=>i.providers.forEach(p=>providerSet.add(p)));
+  const unitSet     = new Set(filtered.map(i=>i.unit));
+
+  const compliance = filtered.length > 0 ? Math.round((greenInc.length/filtered.length)*100) : 0;
+
+  return (
+    <div style={{ minHeight:"100vh", background:"var(--bg)" }}>
+
+      {/* ── HEADER ─────────────────────────────────────────── */}
+      <div style={{ background:"var(--surface)", borderBottom:"1px solid var(--border2)", padding:"12px 24px", position:"sticky", top:0, zIndex:40 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", maxWidth:1400, margin:"0 auto" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+            <div className="blink" style={{ width:8, height:8, borderRadius:"50%", background:"var(--green)", flexShrink:0 }} />
+            <div>
+              <div style={{ fontWeight:900, fontSize:15, letterSpacing:"0.06em", textTransform:"uppercase" }}>Fishers Dept. of Fire &amp; Emergency Services</div>
+              <div style={{ fontFamily:"var(--mono)", fontSize:10, color:"var(--text3)", letterSpacing:"0.1em", marginTop:1 }}>EMS QA/QI INTELLIGENCE DASHBOARD · {PERIOD_LABEL[period]}</div>
+            </div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ display:"flex", background:"var(--surface2)", borderRadius:8, border:"1px solid var(--border)", overflow:"hidden" }}>
+              {[["yesterday","Yesterday"],["week","7 Days"],["month","30 Days"]].map(([v,lbl]) => (
+                <button key={v} className="qa-btn" onClick={()=>setPeriod(v)} style={{ padding:"7px 14px", fontSize:12, background:period===v?"var(--blue)":"transparent", color:period===v?"#fff":"var(--text2)", fontWeight:period===v?800:400, letterSpacing:"0.04em" }}>{lbl}</button>
+              ))}
+            </div>
+            <button className="qa-btn" onClick={()=>setAiOpen(true)} style={{ background:"var(--surface2)", color:"var(--blue)", border:"1px solid var(--blue-brd)", padding:"7px 14px", borderRadius:8, fontSize:12, fontWeight:800, letterSpacing:"0.06em" }}>◈ AI PCR EVAL</button>
+            <div style={{ fontFamily:"var(--mono)", fontSize:14, color:"var(--text2)", background:"var(--surface2)", padding:"7px 12px", borderRadius:6, border:"1px solid var(--border)", letterSpacing:"0.06em" }}>{clock}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── MAIN CONTENT ───────────────────────────────────── */}
+      <div style={{ maxWidth:1400, margin:"0 auto", padding:"22px 24px" }}>
+
+        {/* SUMMARY ROW */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:24 }}>
+          {[
+            { label:"Total Runs",       val:filtered.length,  color:"var(--text)",  sub:"in period" },
+            { label:"Critical Flags",   val:redInc.length,    color:"#ff4757",      sub:"protocol violations" },
+            { label:"Needs Review",     val:yellowInc.length, color:"#ffb700",      sub:"documentation issues" },
+            { label:"Compliance Rate",  val:`${compliance}%`, color:"#1fda73",      sub:`${greenInc.length} of ${filtered.length} runs` },
+          ].map(s => (
+            <div key={s.label} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, padding:"16px 20px" }}>
+              <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.12em", color:"var(--text3)", fontWeight:700, marginBottom:5 }}>{s.label}</div>
+              <div style={{ fontFamily:"var(--mono)", fontSize:34, fontWeight:900, color:s.color, lineHeight:1 }}>{s.val}</div>
+              <div style={{ fontSize:11, color:"var(--text3)", marginTop:4 }}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* STATUS BOARD */}
+        <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.15em", color:"var(--text3)", fontWeight:700, marginBottom:10 }}>▸ SITUATIONAL AWARENESS STATUS BOARD</div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16, marginBottom:30 }}>
+          {["red","yellow","green"].map(status => {
+            const incs = { red:redInc, yellow:yellowInc, green:greenInc }[status];
+            return (
+              <StatusColumn
+                key={status}
+                status={status}
+                incidents={incs}
+                onOpenList={() => openList(statusTitle[status], `${PERIOD_LABEL[period]} · ${incs.length} incidents`, incs)}
+                onOpenItem={inc => openItem(statusTitle[status], `${PERIOD_LABEL[period]} · ${incs.length} incidents`, incs, inc)}
+              />
+            );
+          })}
+        </div>
+
+        {/* PROGRAM INTELLIGENCE */}
+        <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.15em", color:"var(--text3)", fontWeight:700, marginBottom:10 }}>▸ PROGRAM INTELLIGENCE</div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:30 }}>
+          {programs.map(p => (
+            <ProgramTile
+              key={p.label}
+              label={p.label}
+              emoji={p.emoji}
+              c={cnt(p.incs)}
+              color={p.color}
+              onClick={() => openList(p.label, `${PERIOD_LABEL[period]} · ${p.incs.length} incident${p.incs.length!==1?"s":""}`, p.incs)}
+            />
+          ))}
+        </div>
+
+        {/* OPERATIONAL BREAKDOWNS */}
+        <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.15em", color:"var(--text3)", fontWeight:700, marginBottom:10 }}>▸ OPERATIONAL BREAKDOWNS</div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12 }}>
+
+          {/* Shift */}
+          <div className="tile" onClick={() => openList("Runs by Shift", `${PERIOD_LABEL[period]} · A/B/C breakdown`, filtered, "shift")} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, padding:"16px 18px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+              <div>
+                <div style={{ fontSize:22, marginBottom:5 }}>🔁</div>
+                <div style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>Runs by Shift</div>
+                <div style={{ fontSize:11, color:"var(--text3)", marginTop:2 }}>A / B / C breakdown with chart</div>
+              </div>
+              <span style={{ fontFamily:"var(--mono)", fontSize:32, fontWeight:900, color:"var(--blue)", lineHeight:1 }}>{filtered.length}</span>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
+              {["A","B","C"].map(sh => {
+                const n = filtered.filter(i=>i.shift===sh).length;
+                return (
+                  <div key={sh} style={{ background:"var(--surface2)", borderRadius:6, padding:"8px", textAlign:"center", border:"1px solid var(--border)" }}>
+                    <div style={{ fontFamily:"var(--mono)", fontSize:10, color:"var(--text3)", marginBottom:2 }}>SH {sh}</div>
+                    <div style={{ fontFamily:"var(--mono)", fontSize:20, fontWeight:700, color:"var(--text)" }}>{n}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Providers */}
+          <div className="tile" onClick={() => openList("Provider Breakdown", `${PERIOD_LABEL[period]} · personnel compliance`, filtered, "provider")} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, padding:"16px 18px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+              <div>
+                <div style={{ fontSize:22, marginBottom:5 }}>👥</div>
+                <div style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>Provider Breakdown</div>
+                <div style={{ fontSize:11, color:"var(--text3)", marginTop:2 }}>All 160 personnel tracked</div>
+              </div>
+              <span style={{ fontFamily:"var(--mono)", fontSize:32, fontWeight:900, color:"var(--blue)", lineHeight:1 }}>{providerSet.size}</span>
+            </div>
+            <div style={{ fontSize:12, color:"var(--text2)", lineHeight:1.6 }}>
+              Compliance rates, run counts, and QA flags per provider — click to view full breakdown.
+            </div>
+          </div>
+
+          {/* Units */}
+          <div className="tile" onClick={() => openList("Unit Breakdown", `${PERIOD_LABEL[period]} · apparatus compliance`, filtered, "unit")} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, padding:"16px 18px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+              <div>
+                <div style={{ fontSize:22, marginBottom:5 }}>🚒</div>
+                <div style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>Unit Breakdown</div>
+                <div style={{ fontSize:11, color:"var(--text3)", marginTop:2 }}>M71–73 · E71–77 · L71–73 · EDO · Staff</div>
+              </div>
+              <span style={{ fontFamily:"var(--mono)", fontSize:32, fontWeight:900, color:"var(--blue)", lineHeight:1 }}>{unitSet.size}</span>
+            </div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+              {[...unitSet].sort().map(u => (
+                <span key={u} style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:4, padding:"2px 7px", fontSize:10, fontFamily:"var(--mono)", color:"var(--text2)" }}>{u}</span>
+              ))}
+            </div>
+          </div>
+
+        </div>
+
+        {/* FOOTER NOTE */}
+        <div style={{ marginTop:28, padding:"12px 16px", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, fontSize:11, color:"var(--text3)", lineHeight:1.7 }}>
+          <strong style={{ color:"var(--text2)" }}>Note:</strong> Dashboard uses mock data seeded from ESO PCR template fields.
+          Connect live data by replacing the <code style={{ color:"var(--blue)", fontFamily:"var(--mono)" }}>INC</code> array with an ESO API call or Firebase Firestore listener.
+          The AI PCR Evaluator references Marion County EMS Protocols 2026 (v25.11.1). All protocol citations should be verified against the current approved document.
+        </div>
+
+      </div>
+
+      {/* MODALS */}
+      {modal && (
+        <IncidentModal
+          title={modal.title}
+          subtitle={modal.sub}
+          incidents={modal.incs}
+          view={modal.view}
+          initialIncident={modal.init}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {aiOpen && <AIEvalPanel onClose={() => setAiOpen(false)} />}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<Dashboard />);
+  </script>
+</body>
+</html>
