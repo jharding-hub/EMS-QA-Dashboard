@@ -15,6 +15,9 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
+// ── CDN globals ────────────────────────────────────────────────────
+const { useState, useEffect, useRef } = React;
+const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend } = Recharts;
 
 // ═══════════════════════════════════════════════════════════════════
 // GLOBAL STYLES — injected via useEffect
@@ -590,7 +593,7 @@ function ProgramTile({ label, emoji, c, color, onClick }) {
 // ═══════════════════════════════════════════════════════════════════
 // MAIN DASHBOARD
 // ═══════════════════════════════════════════════════════════════════
-export default function Dashboard() {
+function Dashboard() {
   const [period, setPeriod] = useState("yesterday");
   const [modal,  setModal]  = useState(null);
   const [aiOpen, setAiOpen] = useState(false);
